@@ -6,6 +6,8 @@ variable "s3_bucket_name" {
   default = "post-urfu-files-test-public"
 }
 
+variable "MONGO_PASSWORD" {}
+
 variable "s3_endpoint" {
   default = "https://storage.yandexcloud.net"
 }
