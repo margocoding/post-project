@@ -1,4 +1,7 @@
 .env
 node_modules
 
-docker-compose.yaml
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars

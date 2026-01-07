@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    container_name: posts-app
+    ports:
+      - "3000:3000"
+    environment:
+      env_file: .env
+    depends_on:
+      - mongo
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
