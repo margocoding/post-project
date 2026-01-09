@@ -1,3 +1,14 @@
+resource "yandex_vpc_network" "my_vpc" {
+  name = var.vpc_name
+}
+
+resource "yandex_vpc_subnet" "my_subnet" {
+  name           = "app-subnet"
+  zone           = var.zone
+  network_id     = yandex_vpc_network.my_vpc.id
+  v4_cidr_blocks = [var.subnet_cidr]
+}
+
 resource "yandex_vpc_security_group" "app_sg" {
   name       = "app-security-group"
   network_id = yandex_vpc_network.my_vpc.id
@@ -5,18 +16,6 @@ resource "yandex_vpc_security_group" "app_sg" {
   ingress {
     protocol       = "TCP"
     port           = 22
-    v4_cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    protocol       = "TCP"
-    port           = 80
-    v4_cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    protocol       = "TCP"
-    port           = 3000
     v4_cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -30,17 +29,6 @@ resource "yandex_vpc_security_group" "app_sg" {
     protocol       = "ANY"
     v4_cidr_blocks = ["0.0.0.0/0"]
   }
-}
-
-resource "yandex_vpc_network" "my_vpc" {
-  name = var.vpc_name
-}
-
-resource "yandex_vpc_subnet" "my_subnet" {
-  name           = "app-subnet"
-  zone           = var.zone
-  network_id     = yandex_vpc_network.my_vpc.id
-  v4_cidr_blocks = [var.subnet_cidr]
 }
 
 resource "yandex_compute_instance" "mongodb" {
@@ -67,10 +55,10 @@ resource "yandex_compute_instance" "mongodb" {
   }
 
   metadata = {
+    ssh-keys  = "ubuntu:${file("~/.ssh/id_rsa.pub")}"
     user-data = <<-EOT
       #cloud-config
       package_update: true
-      ssh-keys = "ubuntu:${file("~/.ssh/id_rsa.pub")}"
       packages:
         - docker.io
       runcmd:
@@ -85,6 +73,28 @@ resource "yandex_iam_service_account" "s3_sa" {
   name = "s3-service-account"
 }
 
+resource "yandex_iam_service_account" "express_sa" {
+  name = "express-sa"
+}
+
+resource "yandex_resourcemanager_folder_iam_member" "express_sa_vpc_access" {
+  folder_id = var.folder_id
+  role      = "editor"
+  member    = "serviceAccount:${yandex_iam_service_account.express_sa.id}"
+}
+
+resource "yandex_resourcemanager_folder_iam_member" "express_sa_container_puller" {
+  folder_id = var.folder_id
+  role      = "container-registry.images.puller"
+  member    = "serviceAccount:${yandex_iam_service_account.express_sa.id}"
+}
+
+resource "yandex_resourcemanager_folder_iam_member" "express_sa_serverless" {
+  folder_id = var.folder_id
+  role      = "serverless.containers.invoker"
+  member    = "system:allUsers"
+}
+
 resource "yandex_resourcemanager_folder_iam_member" "s3_access" {
   folder_id = var.folder_id
   role      = "storage.admin"
@@ -93,79 +103,110 @@ resource "yandex_resourcemanager_folder_iam_member" "s3_access" {
 
 resource "yandex_iam_service_account_static_access_key" "s3_key" {
   service_account_id = yandex_iam_service_account.s3_sa.id
-  description        = "S3 access key"
 }
 
 resource "yandex_storage_bucket" "app_bucket" {
   bucket     = var.s3_bucket_name
   access_key = yandex_iam_service_account_static_access_key.s3_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.s3_key.secret_key
-
-  depends_on = [
-    yandex_resourcemanager_folder_iam_member.s3_access
-  ]
-
-  anonymous_access_flags {
-    read = false
-    list = false
-  }
+  depends_on = [yandex_resourcemanager_folder_iam_member.s3_access]
 }
 
-resource "yandex_compute_instance" "express" {
-  count       = var.express_vm_count
-  name        = "${var.express_vm_prefix}-${count.index + 1}"
-  platform_id = "standard-v1"
-  zone        = var.zone
+resource "yandex_container_registry" "my_registry" {
+  name = "my-app-registry"
+}
 
-  depends_on = [
-    yandex_iam_service_account_static_access_key.s3_key,
-    yandex_compute_instance.mongodb
-  ]
+resource "yandex_serverless_container" "express_app" {
+  name               = "express-app-container"
+  service_account_id = yandex_iam_service_account.express_sa.id
+  memory             = 256
+  cores              = 1
 
-  resources {
-    cores  = 2
-    memory = 4
-  }
-
-  boot_disk {
-    initialize_params {
-      image_id = "fd878mk5p0ao0vmo0ld8"
-      size     = 20
+  image {
+    url = "cr.yandex/${yandex_container_registry.my_registry.id}/express-app:latest"
+    environment = {
+      MONGO_URI            = "mongodb://admin:${var.MONGO_PASSWORD}@${yandex_compute_instance.mongodb.network_interface[0].ip_address}:27017/app?authSource=admin"
+      PORT                 = "3000"
+      S3_REGION            = var.s3_zone
+      S3_ENDPOINT          = var.s3_endpoint
+      S3_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.s3_key.access_key
+      S3_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.s3_key.secret_key
+      S3_BUCKET            = yandex_storage_bucket.app_bucket.bucket
     }
   }
 
-  network_interface {
-    subnet_id          = yandex_vpc_subnet.my_subnet.id
-    nat                = true
-    security_group_ids = [yandex_vpc_security_group.app_sg.id]
+  connectivity {
+    network_id = yandex_vpc_network.my_vpc.id
+  }
+}
+
+resource "yandex_api_gateway" "app_gateway" {
+  name = "express-api-gateway"
+  spec = <<-EOT
+    openapi: "3.0.0"
+    info:
+      version: 1.0.0
+      title: Express App API
+    paths:
+      /:
+        get:
+          x-yc-apigateway-integration:
+            type: "serverless_containers"
+            container_id: "${yandex_serverless_container.express_app.id}"
+            service_account_id: "${yandex_iam_service_account.express_sa.id}"
+      /{proxy+}:
+        x-yc-apigateway-any-method:
+          x-yc-apigateway-integration:
+            type: "serverless_containers"
+            container_id: "${yandex_serverless_container.express_app.id}"
+            service_account_id: "${yandex_iam_service_account.express_sa.id}"
+          parameters:
+            - name: proxy
+              in: path
+              required: true
+              schema:
+                type: string
+  EOT
+}
+
+resource "yandex_monitoring_dashboard" "app_dashboard" {
+  name = "express-app-monitoring"
+
+  widgets {
+    position {
+      x = 0
+      y = 0
+      w = 12
+      h = 8
+
+    }
+    chart {
+      chart_id = "requests-chart"
+
+      title = "HTTP Requests"
+      queries {
+        target {
+          query = "serverless.containers.http.requests_count{container_id=\"${yandex_serverless_container.express_app.id}\"}"
+        }
+      }
+    }
   }
 
-  metadata = {
-    ssh-keys  = "ubuntu:${file(var.sa_public_key_path)}"
-    user-data = <<-EOT
-      #cloud-config
-      package_update: true
-      packages:
-        - docker.io
-        - git
-      runcmd:
-        - systemctl start docker
-        - systemctl enable docker
-        - curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        - chmod +x /usr/local/bin/docker-compose
-        - mkdir -p /home/ubuntu/app
-        - git clone ${var.repository_link} /home/ubuntu/app
-        - |
-          cat <<EOF > /home/ubuntu/app/.env
-          MONGO_URI=mongodb://admin:${var.MONGO_PASSWORD}@${yandex_compute_instance.mongodb.network_interface[0].ip_address}:27017/app?authSource=admin
-          PORT=3000
-          S3_REGION=${var.zone}
-          S3_ENDPOINT=${var.s3_endpoint}
-          S3_ACCESS_KEY_ID=${yandex_iam_service_account_static_access_key.s3_key.access_key}
-          S3_SECRET_ACCESS_KEY=${yandex_iam_service_account_static_access_key.s3_key.secret_key}
-          S3_BUCKET=${yandex_storage_bucket.app_bucket.bucket}
-          EOF
-        - cd /home/ubuntu/app && /usr/local/bin/docker-compose up -d --build
-    EOT
+  widgets {
+    position {
+      x = 12
+      y = 0
+      w = 12
+      h = 8
+    }
+    chart {
+      chart_id = "errors-chart"
+      title    = "Errors (5xx)"
+      queries {
+        target {
+          query = "serverless.containers.http.errors_count{container_id=\"${yandex_serverless_container.express_app.id}\", status=\"5xx\"}"
+        }
+      }
+    }
   }
 }

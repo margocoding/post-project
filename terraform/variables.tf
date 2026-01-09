@@ -1,7 +1,10 @@
 variable "sa_key_file" {}
 variable "cloud_id" {}
 variable "folder_id" {}
-variable "sa_public_key_path" {}
+
+variable "s3_zone" {
+  default = "ru-central1"
+}
 
 variable "s3_bucket_name" {
   default = "post-urfu-files-test-public"
@@ -11,10 +14,6 @@ variable "MONGO_PASSWORD" {}
 
 variable "s3_endpoint" {
   default = "https://storage.yandexcloud.net"
-}
-
-variable "repository_link" {
-  default = "https://github.com/margocoding/post-project.git"
 }
 
 variable "zone" {
@@ -31,16 +30,4 @@ variable "subnet_cidr" {
 
 variable "mongodb_vm_name" {
   default = "mongodb"
-}
-
-variable "express_vm_count" {
-  default = 2
-}
-
-variable "express_vm_prefix" {
-  default = "express"
-}
-
-variable "lb_name" {
-  default = "app-lb"
 }
