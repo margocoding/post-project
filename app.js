@@ -7,13 +7,6 @@ const app = express();
 const port = +(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
-app.use((req, res, next) => {
-  if (req.headers["x-forwarded-proto"] === "https") {
-    // @ts-ignore
-    req.protocol = "https";
-  }
-  next();
-});
 
 app.use(express.json());
 app.use("/post", postRouter);

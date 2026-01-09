@@ -2,10 +2,6 @@ output "mongodb_ip" {
   value = yandex_compute_instance.mongodb.network_interface.0.nat_ip_address
 }
 
-output "express_ips" {
-  value = [for i in yandex_compute_instance.express : i.network_interface.0.nat_ip_address]
+output "api_gateway_url" {
+  value = "https://${yandex_api_gateway.app_gateway.domain}"
 }
-
-# output "lb_ip" {
-#   value = yandex_lb_network_load_balancer.app_lb.listener.0.external_address
-# }
