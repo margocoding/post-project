@@ -1,6 +1,7 @@
 variable "sa_key_file" {}
 variable "cloud_id" {}
 variable "folder_id" {}
+variable "sa_public_key_path" {}
 
 variable "s3_bucket_name" {
   default = "post-urfu-files-test-public"
