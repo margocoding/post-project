@@ -70,6 +70,7 @@ resource "yandex_compute_instance" "mongodb" {
     user-data = <<-EOT
       #cloud-config
       package_update: true
+      ssh-keys = "ubuntu:${file("~/.ssh/id_rsa.pub")}"
       packages:
         - docker.io
       runcmd:
@@ -140,6 +141,7 @@ resource "yandex_compute_instance" "express" {
   }
 
   metadata = {
+    ssh-keys  = "ubuntu:${file(var.sa_public_key_path)}"
     user-data = <<-EOT
       #cloud-config
       package_update: true
