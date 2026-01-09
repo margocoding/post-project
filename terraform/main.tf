@@ -133,12 +133,12 @@ resource "yandex_serverless_container" "express_app" {
   image {
     url = "cr.yandex/${yandex_container_registry.my_registry.id}/express-app:latest"
     environment = {
-      MONGO_URI            = "mongodb://admin:${var.MONGO_PASSWORD}@${yandex_compute_instance.mongodb.network_interface[0].ip_address}:27017/app?authSource=admin"
-      S3_REGION            = var.s3_zone
-      S3_ENDPOINT          = var.s3_endpoint
-      S3_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.s3_key.access_key
-      S3_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.s3_key.secret_key
-      S3_BUCKET            = yandex_storage_bucket.app_bucket.bucket
+      MONGO_URI        = "mongodb://admin:${var.MONGO_PASSWORD}@${yandex_compute_instance.mongodb.network_interface[0].ip_address}:27017/app?authSource=admin"
+      S3_REGION        = var.s3_zone
+      S3_ENDPOINT      = var.s3_endpoint
+      S3_ACCESS_KEY_ID = yandex_iam_service_account_static_access_key.s3_key.access_key
+      S3_ACCESS_KEY    = yandex_iam_service_account_static_access_key.s3_key.secret_key
+      S3_BUCKET        = yandex_storage_bucket.app_bucket.bucket
     }
   }
 
