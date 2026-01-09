@@ -106,32 +106,39 @@ resource "yandex_iam_service_account_static_access_key" "s3_key" {
 }
 
 resource "yandex_storage_bucket" "app_bucket" {
-  bucket     = var.s3_bucket_name
-  access_key = yandex_iam_service_account_static_access_key.s3_key.access_key
-  secret_key = yandex_iam_service_account_static_access_key.s3_key.secret_key
+  bucket = var.s3_bucket_name
+
+  anonymous_access_flags {
+    read        = true
+    list        = true
+    config_read = true
+  }
+
   depends_on = [yandex_resourcemanager_folder_iam_member.s3_access]
 }
+
 
 resource "yandex_container_registry" "my_registry" {
   name = "my-app-registry"
 }
 
 resource "yandex_serverless_container" "express_app" {
-  name               = "express-app-container"
+  name               = "express-app"
   service_account_id = yandex_iam_service_account.express_sa.id
   memory             = 256
   cores              = 1
 
+  depends_on = [yandex_container_registry.my_registry]
+
   image {
     url = "cr.yandex/${yandex_container_registry.my_registry.id}/express-app:latest"
     environment = {
-      MONGO_URI            = "mongodb://admin:${var.MONGO_PASSWORD}@${yandex_compute_instance.mongodb.network_interface[0].ip_address}:27017/app?authSource=admin"
-      PORT                 = "3000"
-      S3_REGION            = var.s3_zone
-      S3_ENDPOINT          = var.s3_endpoint
-      S3_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.s3_key.access_key
-      S3_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.s3_key.secret_key
-      S3_BUCKET            = yandex_storage_bucket.app_bucket.bucket
+      MONGO_URI        = "mongodb://admin:${var.MONGO_PASSWORD}@${yandex_compute_instance.mongodb.network_interface[0].ip_address}:27017/app?authSource=admin"
+      S3_REGION        = var.s3_zone
+      S3_ENDPOINT      = var.s3_endpoint
+      S3_ACCESS_KEY_ID = yandex_iam_service_account_static_access_key.s3_key.access_key
+      S3_ACCESS_KEY    = yandex_iam_service_account_static_access_key.s3_key.secret_key
+      S3_BUCKET        = yandex_storage_bucket.app_bucket.bucket
     }
   }
 
